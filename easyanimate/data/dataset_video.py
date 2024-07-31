@@ -186,7 +186,7 @@ class VideoDataset(Dataset):
                 transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True),
             ]
         )
-
+    
     def get_batch(self, idx):
         video_dict = self.dataset[idx]
         video_id, name = video_dict['videos'], video_dict['text']

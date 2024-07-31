@@ -103,6 +103,7 @@ class GatedSelfAttentionDense(nn.Module):
 class AdaLayerNormShift(nn.Module):
     r"""
     Norm layer modified to incorporate timestep embeddings.
+
     Parameters:
         embedding_dim (`int`): The size of each embedding vector.
         num_embeddings (`int`): The size of the embeddings dictionary.
@@ -130,6 +131,7 @@ def zero_module(module):
 class KVCompressionCrossAttention(nn.Module):
     r"""
     A cross attention layer.
+
     Parameters:
         query_dim (`int`): The number of channels in the query.
         cross_attention_dim (`int`, *optional*):
@@ -251,7 +253,7 @@ class KVCompressionCrossAttention(nn.Module):
             value = rearrange(value, "(b f) c h w -> b (f h w) c", f=num_frames)
             value = self.kv_compression_norm(value)
             value = value.to(query.dtype)
-
+            
             key = self.reshape_heads_to_batch_dim(key)
             value = self.reshape_heads_to_batch_dim(value)
             encoder_hidden_states_key_proj = self.reshape_heads_to_batch_dim(encoder_hidden_states_key_proj)
@@ -275,7 +277,7 @@ class KVCompressionCrossAttention(nn.Module):
             value = rearrange(value, "(b f) c h w -> b (f h w) c", f=num_frames)
             value = self.kv_compression_norm(value)
             value = value.to(query.dtype)
-
+            
             key = self.reshape_heads_to_batch_dim(key)
             value = self.reshape_heads_to_batch_dim(value)
 
@@ -724,7 +726,7 @@ class TemporalTransformerBlock(nn.Module):
             )
         else:
             ff_output = self.ff(norm_hidden_states, scale=lora_scale)
-
+        
         if self.norm4 is not None:
             ff_output = self.norm4(ff_output)
 
@@ -1033,7 +1035,7 @@ class SelfAttentionTemporalTransformerBlock(nn.Module):
             )
         else:
             ff_output = self.ff(norm_hidden_states, scale=lora_scale)
-
+        
         if self.norm4 is not None:
             ff_output = self.norm4(ff_output)
 
@@ -1047,7 +1049,7 @@ class SelfAttentionTemporalTransformerBlock(nn.Module):
             hidden_states = hidden_states.squeeze(1)
 
         return hidden_states
-
+    
 
 @maybe_allow_in_graph
 class KVCompressionTransformerBlock(nn.Module):
