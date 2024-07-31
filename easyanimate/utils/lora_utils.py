@@ -51,14 +51,22 @@ class LoRAModule(torch.nn.Module):
             kernel_size = org_module.kernel_size
             stride = org_module.stride
             padding = org_module.padding
-            self.lora_down = torch.nn.Conv2d(in_dim, self.lora_dim, kernel_size, stride, padding, bias=False)
-            self.lora_up = torch.nn.Conv2d(self.lora_dim, out_dim, (1, 1), (1, 1), bias=False)
+            self.lora_down = torch.nn.Conv2d(in_dim,
+                                             self.lora_dim,
+                                             kernel_size,
+                                             stride,
+                                             padding,
+                                             bias=False)
+            self.lora_up = torch.nn.Conv2d(self.lora_dim,
+                                           out_dim, (1, 1), (1, 1),
+                                           bias=False)
         else:
             self.lora_down = torch.nn.Linear(in_dim, self.lora_dim, bias=False)
             self.lora_up = torch.nn.Linear(self.lora_dim, out_dim, bias=False)
 
         if type(alpha) == torch.Tensor:
-            alpha = alpha.detach().float().numpy()  # without casting, bf16 causes error
+            alpha = alpha.detach().float().numpy(
+            )  # without casting, bf16 causes error
         alpha = self.lora_dim if alpha is None or alpha == 0 else alpha
         self.scale = alpha / self.lora_dim
         self.register_buffer("alpha", torch.tensor(alpha))
@@ -95,7 +103,8 @@ class LoRAModule(torch.nn.Module):
 
         # rank dropout
         if self.rank_dropout is not None and self.training:
-            mask = torch.rand((lx.size(0), self.lora_dim), device=lx.device) > self.rank_dropout
+            mask = torch.rand((lx.size(0), self.lora_dim),
+                              device=lx.device) > self.rank_dropout
             if len(lx.size()) == 3:
                 mask = mask.unsqueeze(1)  # for Text Encoder
             elif len(lx.size()) == 4:
@@ -103,13 +112,15 @@ class LoRAModule(torch.nn.Module):
             lx = lx * mask
 
             # scaling for rank dropout: treat as if the rank is changed
-            scale = self.scale * (1.0 / (1.0 - self.rank_dropout))  # redundant for readability
+            scale = self.scale * (1.0 / (1.0 - self.rank_dropout)
+                                  )  # redundant for readability
         else:
             scale = self.scale
 
         lx = self.lora_up(lx)
 
-        return org_forwarded.to(weight_dtype) + lx.to(weight_dtype) * self.multiplier * scale
+        return org_forwarded.to(
+            weight_dtype) + lx.to(weight_dtype) * self.multiplier * scale
 
 
 def addnet_hash_legacy(b):
@@ -156,10 +167,11 @@ def precalculate_safetensors_hashes(tensors, metadata):
 
 
 class LoRANetwork(torch.nn.Module):
-    TRANSFORMER_TARGET_REPLACE_MODULE = ["Transformer2DModel", "Transformer3DModel"]
+    TRANSFORMER_TARGET_REPLACE_MODULE = ["Transformer3DModel"]
     TEXT_ENCODER_TARGET_REPLACE_MODULE = ["T5LayerSelfAttention", "T5LayerFF"]
     LORA_PREFIX_TRANSFORMER = "lora_unet"
     LORA_PREFIX_TEXT_ENCODER = "lora_te"
+
     def __init__(
         self,
         text_encoder: Union[List[T5EncoderModel], T5EncoderModel],
@@ -179,7 +191,9 @@ class LoRANetwork(torch.nn.Module):
         self.alpha = alpha
         self.dropout = dropout
 
-        print(f"create LoRA network. base dim (rank): {lora_dim}, alpha: {alpha}")
+        print(
+            f"create LoRA network. base dim (rank): {lora_dim}, alpha: {alpha}"
+        )
         print(f"neuron dropout: p={self.dropout}")
 
         # create module instances
@@ -188,11 +202,8 @@ class LoRANetwork(torch.nn.Module):
             root_module: torch.nn.Module,
             target_replace_modules: List[torch.nn.Module],
         ) -> List[LoRAModule]:
-            prefix = (
-                self.LORA_PREFIX_TRANSFORMER
-                if is_unet
-                else self.LORA_PREFIX_TEXT_ENCODER
-            )
+            prefix = (self.LORA_PREFIX_TRANSFORMER
+                      if is_unet else self.LORA_PREFIX_TEXT_ENCODER)
             loras = []
             skipped = []
             for name, module in root_module.named_modules():
@@ -200,8 +211,9 @@ class LoRANetwork(torch.nn.Module):
                     for child_name, child_module in module.named_modules():
                         is_linear = child_module.__class__.__name__ == "Linear" or child_module.__class__.__name__ == "LoRACompatibleLinear"
                         is_conv2d = child_module.__class__.__name__ == "Conv2d" or child_module.__class__.__name__ == "LoRACompatibleConv"
-                        is_conv2d_1x1 = is_conv2d and child_module.kernel_size == (1, 1)
-                        
+                        is_conv2d_1x1 = is_conv2d and child_module.kernel_size == (
+                            1, 1)
+
                         if not add_lora_in_attn_temporal:
                             if "attn_temporal" in child_name:
                                 continue
@@ -233,18 +245,24 @@ class LoRANetwork(torch.nn.Module):
                             loras.append(lora)
             return loras, skipped
 
-        text_encoders = text_encoder if type(text_encoder) == list else [text_encoder]
+        text_encoders = text_encoder if type(text_encoder) == list else [
+            text_encoder
+        ]
 
         self.text_encoder_loras = []
         skipped_te = []
         for i, text_encoder in enumerate(text_encoders):
-            if text_encoder is not None:
-                text_encoder_loras, skipped = create_modules(False, text_encoder, LoRANetwork.TEXT_ENCODER_TARGET_REPLACE_MODULE)
-                self.text_encoder_loras.extend(text_encoder_loras)
-                skipped_te += skipped
-        print(f"create LoRA for Text Encoder: {len(self.text_encoder_loras)} modules.")
+            text_encoder_loras, skipped = create_modules(
+                False, text_encoder,
+                LoRANetwork.TEXT_ENCODER_TARGET_REPLACE_MODULE)
+            self.text_encoder_loras.extend(text_encoder_loras)
+            skipped_te += skipped
+        print(
+            f"create LoRA for Text Encoder: {len(self.text_encoder_loras)} modules."
+        )
 
-        self.unet_loras, skipped_un = create_modules(True, unet, LoRANetwork.TRANSFORMER_TARGET_REPLACE_MODULE)
+        self.unet_loras, skipped_un = create_modules(
+            True, unet, LoRANetwork.TRANSFORMER_TARGET_REPLACE_MODULE)
         print(f"create LoRA for U-Net: {len(self.unet_loras)} modules.")
 
         # assertion
@@ -253,7 +271,11 @@ class LoRANetwork(torch.nn.Module):
             assert lora.lora_name not in names, f"duplicated lora name: {lora.lora_name}"
             names.add(lora.lora_name)
 
-    def apply_to(self, text_encoder, unet, apply_text_encoder=True, apply_unet=True):
+    def apply_to(self,
+                 text_encoder,
+                 unet,
+                 apply_text_encoder=True,
+                 apply_unet=True):
         if apply_text_encoder:
             print("enable LoRA for text encoder")
         else:
@@ -331,13 +353,15 @@ class LoRANetwork(torch.nn.Module):
             # Precalculate model hashes to save time on indexing
             if metadata is None:
                 metadata = {}
-            model_hash, legacy_hash = precalculate_safetensors_hashes(state_dict, metadata)
+            model_hash, legacy_hash = precalculate_safetensors_hashes(
+                state_dict, metadata)
             metadata["sshs_model_hash"] = model_hash
             metadata["sshs_legacy_hash"] = legacy_hash
 
             save_file(state_dict, file, metadata)
         else:
             torch.save(state_dict, file)
+
 
 def create_network(
     multiplier: float,
@@ -366,7 +390,14 @@ def create_network(
     )
     return network
 
-def merge_lora(pipeline, lora_path, multiplier, device='cpu', dtype=torch.float32, state_dict=None, transformer_only=False):
+
+def merge_lora(pipeline,
+               lora_path,
+               multiplier,
+               device='cpu',
+               dtype=torch.float32,
+               state_dict=None,
+               transformer_only=False):
     LORA_PREFIX_TRANSFORMER = "lora_unet"
     LORA_PREFIX_TEXT_ENCODER = "lora_te"
     if state_dict is None:
@@ -384,10 +415,12 @@ def merge_lora(pipeline, lora_path, multiplier, device='cpu', dtype=torch.float3
             if transformer_only:
                 continue
             else:
-                layer_infos = layer.split(LORA_PREFIX_TEXT_ENCODER + "_")[-1].split("_")
+                layer_infos = layer.split(LORA_PREFIX_TEXT_ENCODER +
+                                          "_")[-1].split("_")
                 curr_layer = pipeline.text_encoder
         else:
-            layer_infos = layer.split(LORA_PREFIX_TRANSFORMER + "_")[-1].split("_")
+            layer_infos = layer.split(LORA_PREFIX_TRANSFORMER +
+                                      "_")[-1].split("_")
             curr_layer = pipeline.transformer
 
         temp_name = layer_infos.pop(0)
@@ -415,16 +448,22 @@ def merge_lora(pipeline, lora_path, multiplier, device='cpu', dtype=torch.float3
 
         curr_layer.weight.data = curr_layer.weight.data.to(device)
         if len(weight_up.shape) == 4:
-            curr_layer.weight.data += multiplier * alpha * torch.mm(weight_up.squeeze(3).squeeze(2),
-                                                                    weight_down.squeeze(3).squeeze(2)).unsqueeze(
-                2).unsqueeze(3)
+            curr_layer.weight.data += multiplier * alpha * torch.mm(
+                weight_up.squeeze(3).squeeze(2),
+                weight_down.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(3)
         else:
-            curr_layer.weight.data += multiplier * alpha * torch.mm(weight_up, weight_down)
+            curr_layer.weight.data += multiplier * alpha * torch.mm(
+                weight_up, weight_down)
 
     return pipeline
 
+
 # TODO: Refactor with merge_lora.
-def unmerge_lora(pipeline, lora_path, multiplier=1, device="cpu", dtype=torch.float32):
+def unmerge_lora(pipeline,
+                 lora_path,
+                 multiplier=1,
+                 device="cpu",
+                 dtype=torch.float32):
     """Unmerge state_dict in LoRANetwork from the pipeline in diffusers."""
     LORA_PREFIX_UNET = "lora_unet"
     LORA_PREFIX_TEXT_ENCODER = "lora_te"
@@ -438,7 +477,8 @@ def unmerge_lora(pipeline, lora_path, multiplier=1, device="cpu", dtype=torch.fl
     for layer, elems in updates.items():
 
         if "lora_te" in layer:
-            layer_infos = layer.split(LORA_PREFIX_TEXT_ENCODER + "_")[-1].split("_")
+            layer_infos = layer.split(LORA_PREFIX_TEXT_ENCODER +
+                                      "_")[-1].split("_")
             curr_layer = pipeline.text_encoder
         else:
             layer_infos = layer.split(LORA_PREFIX_UNET + "_")[-1].split("_")
@@ -469,9 +509,11 @@ def unmerge_lora(pipeline, lora_path, multiplier=1, device="cpu", dtype=torch.fl
 
         curr_layer.weight.data = curr_layer.weight.data.to(device)
         if len(weight_up.shape) == 4:
-            curr_layer.weight.data -= multiplier * alpha * torch.mm(weight_up.squeeze(3).squeeze(2),
-                                                                    weight_down.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(3)
+            curr_layer.weight.data -= multiplier * alpha * torch.mm(
+                weight_up.squeeze(3).squeeze(2),
+                weight_down.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(3)
         else:
-            curr_layer.weight.data -= multiplier * alpha * torch.mm(weight_up, weight_down)
+            curr_layer.weight.data -= multiplier * alpha * torch.mm(
+                weight_up, weight_down)
 
     return pipeline
