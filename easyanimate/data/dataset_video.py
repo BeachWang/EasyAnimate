@@ -162,7 +162,13 @@ class VideoDataset(Dataset):
         enable_bucket=False, enable_inpaint=False
     ):
         print(f"loading annotations from {json_path} ...")
-        self.dataset = json.load(open(json_path, 'r'))
+
+        if json_path.lower().endswith('jsonl'):
+            with open(json_path, 'r') as fin:
+                self.dataset = [json.loads(line.strip()) for line in fin]
+        else:
+            self.dataset = json.load(open(json_path, 'r'))
+        
         self.length = len(self.dataset)
         print(f"data scale: {self.length}")
 
@@ -183,38 +189,54 @@ class VideoDataset(Dataset):
     
     def get_batch(self, idx):
         video_dict = self.dataset[idx]
-        video_id, name = video_dict['file_path'], video_dict['text']
+        video_id, name = video_dict['videos'], video_dict['text']
 
-        if self.video_folder is None:
-            video_dir = video_id
-        else:
-            video_dir = os.path.join(self.video_folder, video_id)
+        if isinstance(video_id, list):
+            video_id = video_id[0]
 
-        with VideoReader_contextmanager(video_dir, num_threads=2) as video_reader:
-            video_length = len(video_reader)
-        
-            clip_length = min(video_length, (self.sample_n_frames - 1) * self.sample_stride + 1)
-            start_idx   = random.randint(0, video_length - clip_length)
-            batch_index = np.linspace(start_idx, start_idx + clip_length - 1, self.sample_n_frames, dtype=int)
-
-            try:
-                sample_args = (video_reader, batch_index)
-                pixel_values = func_timeout(
-                    VIDEO_READER_TIMEOUT, get_video_reader_batch, args=sample_args
-                )
-            except FunctionTimedOut:
-                raise ValueError(f"Read {idx} timeout.")
-            except Exception as e:
-                raise ValueError(f"Failed to extract frames from video. Error is {e}.")
-
-            if not self.enable_bucket:
-                pixel_values = torch.from_numpy(pixel_values).permute(0, 3, 1, 2).contiguous()
-                pixel_values = pixel_values / 255.
-                del video_reader
+        video_dir = video_id
+        if not os.path.exists(video_id):
+            if self.video_folder:
+                video_dir = os.path.join(self.video_folder, video_id)
             else:
-                pixel_values = pixel_values
+                raise ValueError(
+                    f"{video_id} does not exist, please change it to absolute path or ser video_folder"
+                )
 
-            return pixel_values, name
+        video_reader = VideoReader(video_dir)
+        video_length = len(video_reader)
+
+        clip_length = min(video_length,
+                          (self.sample_n_frames - 1) * self.sample_stride + 1)
+        start_idx = random.randint(0, video_length - clip_length)
+        batch_index = np.linspace(start_idx,
+                                  start_idx + clip_length - 1,
+                                  self.sample_n_frames,
+                                  dtype=int)
+
+        try:
+            sample_args = (video_reader, batch_index)
+            pixel_values = func_timeout(
+                VIDEO_READER_TIMEOUT,
+                get_video_reader_batch,
+                args=sample_args
+            )
+        except FunctionTimedOut:
+            raise ValueError(f"Read {idx} timeout.")
+        except Exception as e:
+            raise ValueError(f"Failed to extract frames from video. Error is {e}.")
+
+        if not self.enable_bucket:
+            pixel_values = torch.from_numpy(pixel_values).permute(
+                    0, 3, 1, 2).contiguous()
+            pixel_values = pixel_values / 255.
+            del video_reader
+
+        # remove special token
+        name = name.replace('<__dj__video>', '').replace('<|__dj__eoc|>',
+                                                         '').strip()
+
+        return pixel_values, name
 
     def __len__(self):
         return self.length

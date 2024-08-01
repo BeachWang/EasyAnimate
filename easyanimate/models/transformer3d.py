@@ -501,6 +501,7 @@ class Transformer3DModel(ModelMixin, ConfigMixin):
             If `return_dict` is True, an [`~models.transformer_2d.Transformer3DModelOutput`] is returned, otherwise a
             `tuple` where the first element is the sample tensor.
         """
+        hidden_states = hidden_states.to(self.pos_embed.proj.weight.dtype)
         # ensure attention_mask is a bias, and give it a singleton query_tokens dimension.
         #   we may have done this conversion already, e.g. if we came here via UNet2DConditionModel#forward.
         #   we can tell by counting dims; if ndim == 2: it's a mask rather than a bias.
@@ -716,8 +717,7 @@ class Transformer3DModel(ModelMixin, ConfigMixin):
         if model.state_dict()['pos_embed.proj.weight'].size() != state_dict['pos_embed.proj.weight'].size():
             new_shape   = model.state_dict()['pos_embed.proj.weight'].size()
             if len(new_shape) == 5:
-                state_dict['pos_embed.proj.weight'] = state_dict['pos_embed.proj.weight'].unsqueeze(2).expand(new_shape).clone()
-                state_dict['pos_embed.proj.weight'][:, :, :-1] = 0
+                state_dict['pos_embed.proj.weight'] = state_dict['pos_embed.proj.weight'].unsqueeze(2).expand(new_shape) / patch_size
             else:
                 model.state_dict()['pos_embed.proj.weight'][:, :4, :, :] = state_dict['pos_embed.proj.weight']
                 model.state_dict()['pos_embed.proj.weight'][:, 4:, :, :] = 0
